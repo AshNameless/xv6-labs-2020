@@ -1,3 +1,4 @@
+#include "kernel/types.h"
 #include "user/user.h"
 
 
@@ -13,7 +14,7 @@ int main(int argc, char* argv[])
     int n;
     n = atoi(argv[1]);
 
-    if(sys_sleep(n))
+    if(sleep(n))
         exit(1);
     exit(0);
 }
