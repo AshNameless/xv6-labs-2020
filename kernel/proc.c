@@ -21,6 +21,25 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+// Compute the number of active processes
+uint64 get_active_procnum(void)
+{
+  struct proc* p;
+  uint64 n = 0;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) 
+      n++;
+
+    release(&p->lock);
+  }
+
+  return n;
+}
+
+
+
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -294,6 +313,9 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  // Copy parent trace mask to child
+  np->tracmask = p->tracmask;
 
   release(&np->lock);
 
