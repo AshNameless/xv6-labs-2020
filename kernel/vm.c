@@ -440,3 +440,44 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+
+// Lab3: print a page table content
+void vmprint(pagetable_t pagetable)
+{
+  uint64 l2idx, l1idx, idx; // Index to the 2 levels page of page table
+  pte_t l2pte, l1pte, pte;
+  pagetable_t l1pgtb, pgtb;
+
+  printf("page table %p\n", pagetable);
+
+  // Find valid l2 PTEs
+  for(l2idx = 0; l2idx <= PXMASK; l2idx++){
+    l2pte = pagetable[l2idx];
+    // Skip this l2 PTE if unvalid
+    if((l2pte & PTE_V) == 0)
+      continue;
+
+    l1pgtb = (pagetable_t)PTE2PA(l2pte);
+    printf("..%d: pte %p pa %p\n", l2idx, l2pte, l1pgtb);
+
+    // Find valid l1 PTEs
+    for(l1idx = 0; l1idx <= PXMASK; l1idx++){
+      l1pte = l1pgtb[l1idx];
+      // Skip unvalid l1 PTE
+      if((l1pte & PTE_V) == 0)
+        continue;
+      
+      pgtb = (pagetable_t)PTE2PA(l1pte);
+      printf(".. ..%d: pte %p pa %p\n", l1idx, l1pte, pgtb);
+
+      for(idx = 0; idx <= PXMASK; idx++){
+        pte = pgtb[idx];
+        if(pte & PTE_V)
+          printf(".. .. ..%d: pte %p pa %p\n", idx, pte, PTE2PA(pte));
+      }
+
+    }
+
+  }
+}
