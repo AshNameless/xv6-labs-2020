@@ -107,7 +107,7 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
-    
+  
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
@@ -118,6 +118,30 @@ exec(char *path, char **argv)
 
   if(p->pid == 1)
     vmprint(p->pagetable);
+
+
+
+
+
+
+
+
+  // // Copy new mappings to ppkpagetable
+  // if(p->sz >= CLINT)
+  //   panic("exec: uses memory more than CLINT");
+  // if(uvmcopy2kpagetable(p->pagetable, p->kpagetable, p->sz) < 0){
+  //   panic("exec: cannot copy mappings to kpagetable");
+  //   // freeproc(p);
+  //   // release(&p->lock);
+  //   // return -1;
+  // }
+
+
+
+
+
+
+
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 

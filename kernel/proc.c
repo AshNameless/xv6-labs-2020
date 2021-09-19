@@ -31,15 +31,22 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
 
+
+      // In Lab: page table, the functionality below are moved into allocproc,
+      // we allocate the kernel stack for a process when generated
+
+
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+
+      
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;
   }
   kvminithart();
 }
@@ -121,6 +128,30 @@ found:
     return 0;
   }
 
+
+
+
+
+
+
+
+  // A per process kernel page table, just as the unique kernel page table in kernel
+  p->kpagetable = pp_kvminit();
+
+  // map the process's kernel stack
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  mappages(p->kpagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W);
+  p->kstack = va;
+
+
+
+
+
+
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -136,6 +167,9 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  uint64 oldsz;
+  oldsz = p->sz;
+
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -150,6 +184,11 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  if(p->kpagetable)
+    pp_kvmfree(p->kpagetable, p->kstack, oldsz);
+  p->kpagetable = 0;
+
 }
 
 // Create a user page table for a given process,
@@ -230,6 +269,18 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+
+
+  if(p->sz >= CLINT)
+    panic("userinit: Process uses memory more than CLINT");
+  
+  // printf("userinit: before copy to kpagetable\n");
+  // if(uvmcopy2kpagetable(p->pagetable, p->kpagetable, p->sz) < 0){
+  //   panic("userinit: cannot copy mappings to kpagetable");
+  // }
+
+
+
   release(&p->lock);
 }
 
@@ -250,6 +301,16 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+
+
+  // if(p->sz >= CLINT)
+  //   panic("growproc: uses memory more than CLINT");
+  // if(uvmcopy2kpagetable(p->pagetable, p->kpagetable, p->sz) < 0){
+  //   return -1;
+  // }
+
+
   return 0;
 }
 
@@ -294,6 +355,26 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+
+
+
+  // Copy mappings to per-process kernel page table.
+  // Because the address higher than CLINT are used by kernel itself, 
+  // we have to avoiding overlapping, thus the maximum address used in
+  // ppkpagetable for user text and data must be less than CLINT
+  // if(np->sz >= CLINT)
+  //   panic("fork: new process uses memory more than CLINT");
+  // if(uvmcopy2kpagetable(np->pagetable, np->kpagetable, np->sz) < 0){
+  //   freeproc(np);
+  //   release(&np->lock);
+  //   return -1;
+  // }
+
+
+
+
+
 
   release(&np->lock);
 
@@ -473,6 +554,19 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+
+
+        // switch to the per process kernel page table
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
+        // Note, schedule() is first invoked at main.c, after original kernel page table been set
+        // In the per process kernel page table, the kernel .text is still 
+        // directly mapped, just like the original kernel page table, 
+        // so the following swtch() function could be invoked correctly        
+
+
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.

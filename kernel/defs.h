@@ -13,6 +13,12 @@ struct mbuf;
 struct sock;
 #endif
 
+
+// vmcopyin.c
+int copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
+
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -158,6 +164,12 @@ void            uartputc_sync(int);
 int             uartgetc(void);
 
 // vm.c
+void pp_kvmfree(pagetable_t kpt, uint64 kstack, uint64 sz);
+int uvmcopy2kpagetable(pagetable_t pt, pagetable_t kpt, uint64 sz);
+pagetable_t     pp_kvminit();
+void            freewalk(pagetable_t pagetable);
+
+
 void            kvminit(void);
 void            kvminithart(void);
 uint64          kvmpa(uint64);
