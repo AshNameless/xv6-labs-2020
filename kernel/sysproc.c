@@ -43,12 +43,24 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  struct proc *p = myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
+  addr = p->sz;
+  if(addr + n >= PLIC)
+    return -1;
   if(growproc(n) < 0)
     return -1;
+
+  if(n>0){
+    // Add mappings to kpagetable
+    uvm2kpagetable(p->pagetable, p->kpagetable, addr, addr+n);
+  } else if(n<0) {
+    // Remove mappings from kpagetable
+    for(int i = addr-PGSIZE; i >= addr+n; i -= PGSIZE)
+      uvmunmap(p->kpagetable, i, 1, 0);
+  }
   return addr;
 }
 

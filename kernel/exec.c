@@ -51,6 +51,8 @@ exec(char *path, char **argv)
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
+    if(sz1 >= PLIC)
+      goto bad;
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -126,15 +128,23 @@ exec(char *path, char **argv)
 
 
 
-  // // Copy new mappings to ppkpagetable
-  // if(p->sz >= CLINT)
-  //   panic("exec: uses memory more than CLINT");
-  // if(uvmcopy2kpagetable(p->pagetable, p->kpagetable, p->sz) < 0){
-  //   panic("exec: cannot copy mappings to kpagetable");
-  //   // freeproc(p);
-  //   // release(&p->lock);
-  //   // return -1;
-  // }
+  // Clear ppkpagetable mappings below PLIC, and then copy new mappings
+  
+  if(p->sz >= PLIC)
+    panic("exec: new process uses memory more than PLIC");
+  
+  if(oldsz >= PLIC)
+    panic("exec: old process uses memory more than PLIC");
+
+  // printf("unmap in exec\n");
+  uvmunmap(p->kpagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  // printf("new map in exec, pid=%d, sz=%d\n", p->pid, PGROUNDUP(p->sz)/PGSIZE);
+  if(uvm2kpagetable(p->pagetable, p->kpagetable, 0, p->sz) != 0){
+    panic("exec: cannot copy mappings to kpagetable");
+    // freeproc(p);
+    // release(&p->lock);
+    // return -1;
+  }
 
 
 

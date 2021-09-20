@@ -165,7 +165,7 @@ int             uartgetc(void);
 
 // vm.c
 void pp_kvmfree(pagetable_t kpt, uint64 kstack, uint64 sz);
-int uvmcopy2kpagetable(pagetable_t pt, pagetable_t kpt, uint64 sz);
+int uvm2kpagetable(pagetable_t pt, pagetable_t kpt, uint64 start, uint64 end);
 pagetable_t     pp_kvminit();
 void            freewalk(pagetable_t pagetable);
 

@@ -170,6 +170,8 @@ freeproc(struct proc *p)
   uint64 oldsz;
   oldsz = p->sz;
 
+  // printf("going to free process, pid=%d\n", p->pid);
+
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
@@ -271,13 +273,12 @@ userinit(void)
 
 
 
-  if(p->sz >= CLINT)
-    panic("userinit: Process uses memory more than CLINT");
+  if(p->sz >= PLIC)
+    panic("userinit: init uses memory more than PLIC");
   
-  // printf("userinit: before copy to kpagetable\n");
-  // if(uvmcopy2kpagetable(p->pagetable, p->kpagetable, p->sz) < 0){
-  //   panic("userinit: cannot copy mappings to kpagetable");
-  // }
+  if(uvm2kpagetable(p->pagetable, p->kpagetable, 0, p->sz) != 0){
+    panic("userinit: cannot copy mappings to kpagetable");
+  }
 
 
 
@@ -301,15 +302,6 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
-
-
-
-  // if(p->sz >= CLINT)
-  //   panic("growproc: uses memory more than CLINT");
-  // if(uvmcopy2kpagetable(p->pagetable, p->kpagetable, p->sz) < 0){
-  //   return -1;
-  // }
-
 
   return 0;
 }
@@ -360,16 +352,17 @@ fork(void)
 
 
   // Copy mappings to per-process kernel page table.
-  // Because the address higher than CLINT are used by kernel itself, 
-  // we have to avoiding overlapping, thus the maximum address used in
-  // ppkpagetable for user text and data must be less than CLINT
-  // if(np->sz >= CLINT)
-  //   panic("fork: new process uses memory more than CLINT");
-  // if(uvmcopy2kpagetable(np->pagetable, np->kpagetable, np->sz) < 0){
-  //   freeproc(np);
-  //   release(&np->lock);
-  //   return -1;
-  // }
+  // Because the address higher than PLIC are used by kernel itself, 
+  // we have to avoid overlapping, thus the maximum address used in
+  // ppkpagetable for user text and data must be less than PLIC
+  if(np->sz >= PLIC)
+    panic("fork: new process uses memory more than PLIC");
+  // printf("map in fork, parent=%d, new=%d, sz=%d\n", p->pid, np->pid, PGROUNDUP(np->sz)/PGSIZE);
+  if(uvm2kpagetable(np->pagetable, np->kpagetable, 0, np->sz) != 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
 
 
@@ -577,6 +570,12 @@ scheduler(void)
       }
       release(&p->lock);
     }
+
+    // THIS IS VERY IMPORTANT!!!
+    if(found == 0)
+      kvminithart();
+
+
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
