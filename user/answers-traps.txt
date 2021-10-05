@@ -1,0 +1,15 @@
+1. Arguments will be available in a0, a1, a2...
+
+2. There is no call to f() in main, the call has been optimized
+   so that f(8) has been replaced by 12. g() has been inlined
+   into f(), no call to g().
+
+3. printf locates at 30+1536 = 1566, but comments say 630?
+
+4. 38, the address of the next instruction.
+
+5. i will be printed as "rld".
+
+6. y will be an arbitrary value, since printf() thinks the 
+   value of y resides in a1, it will fetch it from a1. But
+   we didn't put any thing in a1, so a1 is a random number.

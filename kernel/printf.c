@@ -124,6 +124,8 @@ panic(char *s)
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
+  
+  backtrace();
 }
 
 void
@@ -131,4 +133,22 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+// Lab: Trap
+void backtrace()
+{
+  // read current frame pointer
+  uint64 fp = r_fp();
+  // get address of the stack of current process
+  uint64 boundry =  PGROUNDUP(fp);
+  
+  uint64 ra;
+  // loop until across the boundry.
+  // What if a function call didn't push return addresss because of optimization?
+  while(fp < boundry){
+    ra = *(uint64*)(fp-8);
+    printf("%p\n", ra);
+    fp = *(uint64*)(fp-16);
+  }
 }

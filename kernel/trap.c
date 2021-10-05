@@ -77,8 +77,28 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+
+    // if p called sigalarm with a positive interval before
+    if(p->alarm_interval > 0){
+      // decrease counter
+      if(p->ticks >0)
+        p->ticks--;
+      // call hanlder when return from kernel. but if p is indeed inside a hanlder, do nothing.
+      else if(!p->is_in_hanlder){
+        // save states of the current execution. because hanlder may modified these.
+        p->timersaved = *(p->trapframe);
+
+        // when return from kernel to userspace, the instruction will be executed is p->trapframe->epc,
+        // we set this to entry of hanlder
+        p->trapframe->epc = p->hanlder;
+
+        p->is_in_hanlder = 1;
+      }
+    }
+
     yield();
+  }
 
   usertrapret();
 }
