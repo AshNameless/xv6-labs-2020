@@ -16,6 +16,63 @@ void kernelvec();
 
 extern int devintr();
 
+
+int pgfault_handler_insidek(uint64 fault_va, struct proc* p)
+{
+  // virtual address is beyond its size, kill it
+  if(fault_va >= p->sz)
+    return -1;
+
+  // hit stack guard page 
+  if(PGROUNDDOWN(fault_va) + PGSIZE == PGROUNDDOWN(p->trapframe->sp))
+    return -1;
+  
+  // normal lazy allocation
+  char *mem=kalloc();
+  if(mem==0) return -1;
+  memset(mem,0,PGSIZE);
+  uint64 a = PGROUNDUP(fault_va);
+  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U)!=0)
+  {
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+}
+
+
+void pagefault_hanlder(uint64 fault_va, struct proc* p)
+{
+  // virtual address is beyond its size, kill it
+  if(fault_va >= p->sz){
+    printf("Address out of range pid=%d\n", p->pid);
+    printf("            vm=%p size=%p\n", fault_va, p->sz);
+    p->killed = 1;
+    return;
+  }
+
+  // hit stack guard page 
+  if(PGROUNDDOWN(fault_va) + PGSIZE == PGROUNDDOWN(p->trapframe->sp)){
+    printf("stack overflow pid = %d\n", p->pid);
+    p->killed = 1;
+    return;
+  } 
+  
+  // normal lazy allocation
+  // allocate physical page and map it to pagetable.
+  char* pa;
+  if((pa = kalloc()) == 0){
+    p->killed = 1;
+    printf("kalloc failed, no more memory pid = %d\n", p->pid);
+    return;
+  }
+
+  memset(pa, 0, PGSIZE);
+  mappages(p->pagetable, PGROUNDDOWN(fault_va), PGSIZE, (uint64)pa, PTE_R|PTE_W|PTE_X|PTE_U);
+
+}
+
+
 void
 trapinit(void)
 {
@@ -49,8 +106,10 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
+
+  uint64 cause = r_scause();
   
-  if(r_scause() == 8){
+  if(cause == 8){
     // system call
 
     if(p->killed)
@@ -67,12 +126,15 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(cause ==13 || cause == 15 ){
+    // Page faule hanlder.
+    pagefault_hanlder(r_stval(), myproc());
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
-
   if(p->killed)
     exit(-1);
 
