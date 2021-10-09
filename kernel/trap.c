@@ -11,6 +11,115 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+extern struct{
+  struct spinlock lock;
+  int count[PHYSTOP/PGSIZE];
+} krefcount;
+
+
+
+
+void cow_alloc(pte_t* pte, struct proc* p)
+{
+  char* mem;
+  uint64 pa, newflags;
+
+  pa = PTE2PA(*pte);
+  newflags = PTE_FLAGS(*pte) & ~PTE_COW;
+  newflags |= PTE_W;
+
+
+  acquire(&krefcount.lock);
+
+  // if this process has the only one pte point to 
+  // the frame, just map it as writeable
+  if(krefcount.count[pa/PGSIZE] == 1){
+    *pte = PA2PTE(pa) | newflags;
+    release(&krefcount.lock);
+    return;
+  }
+
+  // there are more than one process reference this frame, we 
+  // need to allocate a new physical frame and map it in this
+  // process's pagetable
+  if((mem = kalloc()) == 0){
+    printf("store page fault: no more memory\n");
+    p->killed = 1;
+    release(&krefcount.lock);
+    return;
+  }
+
+  memmove(mem, (void*)pa, PGSIZE);
+  *pte = PA2PTE(mem) | newflags;
+
+  krefcount.count[pa/PGSIZE]--;
+  release(&krefcount.lock);
+  return;
+}
+
+
+// check if va located in cow page
+int handle_dst_cow(uint64 va){
+  struct proc* p = myproc();
+  pte_t* pte;
+
+  if(va >= MAXVA) return -1;
+
+  if((pte = walk(p->pagetable, va, 0)) == 0){
+    printf("handle_dst_cow: page table walk for va failed\n");
+    return -1;
+  }
+
+
+  if(*pte & PTE_COW) 
+    cow_alloc(pte, p);
+  
+  return 0;
+}
+
+
+void pgfault_handler()
+{
+  struct proc* p = myproc();
+  uint64 addr = r_stval();
+
+  // invalid address
+  if(addr > p->sz){
+    p->killed = 1;
+    return;
+  }
+
+  // stack overflow
+  if(PGROUNDDOWN(addr) + 1 == PGROUNDDOWN(p->trapframe->sp)){
+    p->killed = 1;
+    return;
+  }
+
+  pte_t* pte;
+  if((pte = walk(p->pagetable, addr, 0)) == 0){
+    printf("store page fault: %p, page table walk failed pid %d\n", addr, p->pid);
+    p->killed = 1;
+    return;
+  }
+
+  // COW
+  if(*pte & PTE_COW){
+    cow_alloc(pte, p);
+  
+  } else {
+    p->killed = 1;
+    return;
+  }
+
+}
+
+
+
+
+
+
+
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -67,6 +176,10 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  
+  } else if(r_scause() == 15){
+    //store page fault, maybe an COW page.
+    pgfault_handler();
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

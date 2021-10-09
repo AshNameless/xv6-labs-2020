@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -14,6 +15,14 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+
+extern struct{
+  struct spinlock lock;
+  int count[PHYSTOP/PGSIZE];
+} krefcount;
+
+
 
 /*
  * create a direct-map page table for the kernel.
@@ -305,13 +314,16 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+
+
+//NOTE: new revision:
+//      only allocate ptes but not memory, for cow feature
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -320,19 +332,25 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+
+    // if this page is writable, clear W and set COW
+    if(flags & PTE_W){
+      flags &= ~PTE_W;
+      flags |= PTE_COW;
     }
+    //reset parent flags
+    *pte = PA2PTE(pa) | flags;
+
+    acquire(&krefcount.lock);
+    //map in child pagetable
+    if(mappages(new, i, PGSIZE, pa, flags) != 0)
+      panic("uvmcopy: map to new page table failed");
+    
+    krefcount.count[pa/PGSIZE]++;
+    release(&krefcount.lock);
+
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -355,6 +373,11 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+
+
+  if(handle_dst_cow(dstva) < 0)
+    return -1;
+
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
