@@ -1,0 +1,65 @@
+1. Why are there missing keys with 2 threads, but not with 1 thread?
+
+  Suppose there are thread A and B. A and B both execute inser();
+A and B both let their new nodes'next point to the current start
+node, and then modify the start pointer. But the start pointer can
+only point to one of these two new nodes, and another is lost.
+
+
+
+
+
+
+Some data for this lab.
+--------------------------------------------------
+1. Before any lock:
+
+########## 1 thread ##########
+100000 puts, 5.567 seconds, 17962 puts/second
+0: 0 keys missing
+100000 gets, 5.631 seconds, 17757 gets/second
+########## 2 threads ##########
+100000 puts, 2.486 seconds, 40231 puts/second
+1: 16426 keys missing
+0: 16426 keys missing
+200000 gets, 5.878 seconds, 34024 gets/second
+###############################
+The speedup is nearly 2, and even higher than 2
+for puts. But the behavior is wrong.
+--------------------------------------------------
+--------------------------------------------------
+2. With one big hash lock:
+
+########## 1 thread ##########
+100000 puts, 5.723 seconds, 17475 puts/second
+0: 0 keys missing
+100000 gets, 5.679 seconds, 17609 gets/second
+########## 2 threads ##########
+100000 puts, 7.000 seconds, 14286 puts/second
+0: 0 keys missing
+1: 0 keys missing
+200000 gets, 14.556 seconds, 13740 gets/second
+###############################
+The behavior is correct, but performance suffers
+a great degradation. 2 thread is even slower than
+1 thread.
+--------------------------------------------------
+--------------------------------------------------
+3. With one lock per hash bucket:
+
+########## 1 thread ##########
+
+########## 2 threads ##########
+
+###############################
+--------------------------------------------------
+
+--------------------------------------------------
+2. With one big hash lock:
+
+########## 1 thread ##########
+
+########## 2 threads ##########
+
+###############################
+--------------------------------------------------
