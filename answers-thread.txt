@@ -18,11 +18,13 @@ Some data for this lab.
 100000 puts, 5.567 seconds, 17962 puts/second
 0: 0 keys missing
 100000 gets, 5.631 seconds, 17757 gets/second
+
 ########## 2 threads ##########
 100000 puts, 2.486 seconds, 40231 puts/second
 1: 16426 keys missing
 0: 16426 keys missing
 200000 gets, 5.878 seconds, 34024 gets/second
+
 ###############################
 The speedup is nearly 2, and even higher than 2
 for puts. But the behavior is wrong.
@@ -34,11 +36,13 @@ for puts. But the behavior is wrong.
 100000 puts, 5.723 seconds, 17475 puts/second
 0: 0 keys missing
 100000 gets, 5.679 seconds, 17609 gets/second
+
 ########## 2 threads ##########
 100000 puts, 7.000 seconds, 14286 puts/second
 0: 0 keys missing
 1: 0 keys missing
 200000 gets, 14.556 seconds, 13740 gets/second
+
 ###############################
 The behavior is correct, but performance suffers
 a great degradation. 2 thread is even slower than
@@ -48,18 +52,18 @@ a great degradation. 2 thread is even slower than
 3. With one lock per hash bucket:
 
 ########## 1 thread ##########
+100000 puts, 5.790 seconds, 17273 puts/second
+0: 0 keys missing
+100000 gets, 5.608 seconds, 17833 gets/second
 
 ########## 2 threads ##########
+100000 puts, 3.356 seconds, 29795 puts/second
+0: 0 keys missing
+1: 0 keys missing
+200000 gets, 7.160 seconds, 27934 gets/second
 
 ###############################
---------------------------------------------------
-
---------------------------------------------------
-2. With one big hash lock:
-
-########## 1 thread ##########
-
-########## 2 threads ##########
-
-###############################
+Now the speedup is more than 1, but still less than 2,
+due to the serialization of executions caused by 
+lock contention.
 --------------------------------------------------

@@ -17,7 +17,7 @@ struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
 
-pthread_mutex_t hashlock;
+pthread_mutex_t hashlock[NBUCKET];
 
 double
 now()
@@ -55,7 +55,7 @@ void put(int key, int value)
   // read the hash directly, we may miss the identical
   // new key, which will cause two nodes with a same key.
   // So, we have to acquire the lock.
-  pthread_mutex_lock(&hashlock);
+  pthread_mutex_lock(&hashlock[i]);
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
@@ -68,7 +68,7 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
-  pthread_mutex_unlock(&hashlock);
+  pthread_mutex_unlock(&hashlock[i]);
 }
 
 static struct entry*
@@ -79,12 +79,12 @@ get(int key)
 
   struct entry *e = 0;
 
-  pthread_mutex_lock(&hashlock);
+  pthread_mutex_lock(&hashlock[i]);
 
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key) break;
   }
-  pthread_mutex_unlock(&hashlock);
+  pthread_mutex_unlock(&hashlock[i]);
   return e;
 }
 
@@ -118,8 +118,8 @@ get_thread(void *xa)
 int
 main(int argc, char *argv[])
 {
-
-  pthread_mutex_init(&hashlock, NULL);
+  for(int i = 0; i < NBUCKET; i++)
+    pthread_mutex_init(&hashlock[i], NULL);
 
   pthread_t *tha;
   void *value;
