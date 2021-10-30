@@ -387,7 +387,7 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
+  if(bn < INDEX_NUM_1){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
@@ -400,6 +400,43 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+
+  // bn is beyond singly indirect blocks, find it in
+  // doubly indirect blocks
+  bn -= INDEX_NUM_1;
+  if(bn < INDEX_NUM_2){
+    uint l2indir, l1indir, l2entnum, l1entnum;
+    // allocate the doubly indrect block
+    if(ip->addrs[NDIRECT+1] == 0)
+      ip->addrs[NDIRECT+1] = balloc(ip->dev);
+    l2indir = ip->addrs[NDIRECT+1];
+
+    bp = bread(ip->dev, l2indir);
+    l2entnum = bn/INDEX_NUM_1;
+    l1entnum = bn%INDEX_NUM_1;
+
+    // we need to allocate level1 indirect block for bn on demond
+    a = (uint*)bp->data;
+    if(a[l2entnum] == 0){
+      a[l2entnum] = balloc(ip->dev);
+      log_write(bp);
+    }
+    l1indir = a[l2entnum];
+    brelse(bp);
+
+    bp = bread(ip->dev, l1indir);
+    a = (uint*)bp->data;
+    // allocate if bn does not exist
+    if(a[l1entnum] == 0){
+      a[l1entnum] = balloc(ip->dev);
+      log_write(bp);
+    }
+    addr = a[l1entnum];
+    brelse(bp);
+
+    return addr;
+  }
+
 
   panic("bmap: out of range");
 }
@@ -423,13 +460,40 @@ itrunc(struct inode *ip)
   if(ip->addrs[NDIRECT]){
     bp = bread(ip->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
+    for(j = 0; j < INDEX_NUM_1; j++){
       if(a[j])
         bfree(ip->dev, a[j]);
     }
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  // truncate doubly indirect blocks
+  if(ip->addrs[NDIRECT+1]){
+    struct buf* dbp;
+    uint* da;
+    dbp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    da = (uint*)dbp->data;
+
+    for(j = 0; j < INDEX_NUM_1; j++){
+      if(da[j]){
+        bp = bread(ip->dev, da[j]);
+        a = (uint*)bp->data;
+
+        for(i = 0; i < INDEX_NUM_1; i++){
+          if(a[i])
+            bfree(ip->dev, a[i]);
+        }
+
+        brelse(bp);
+        bfree(ip->dev, da[j]);
+      }
+    }
+
+    brelse(dbp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
