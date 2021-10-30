@@ -165,6 +165,58 @@ bad:
   return -1;
 }
 
+// symbolic link
+// create a file named "path", and write the "target" path name
+// into the data block of this "path" file. This implementation
+// seems wasteful, since I use a whole block just for storing 
+// a file name, maybe 128 or 256 butes.
+uint64 
+sys_symlink(void)
+{
+  char name[DIRSIZ], path[MAXPATH], target[MAXPATH];
+  struct inode *dp, *ip;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+
+  if((dp = nameiparent(path, name)) == 0)
+    return -1;
+  ilock(dp);
+
+  // if the file exists, we have to use another name for symbolic link
+  if((ip = dirlookup(dp, name, 0)) != 0){
+    iput(ip);
+    iunlockput(dp);
+    end_op();
+    return -1;
+  }
+
+  // create a new file, wrtie target into its data block
+  ip = ialloc(dp->dev, T_SYMLINK);
+  ilock(ip);
+  if(writei(ip, 0, (uint64)target, 0, MAXPATH) != MAXPATH)
+    goto bad;
+
+  // hard link the symbolic link file into dir
+  if(dirlink(dp, name, ip->inum))
+    panic("symlink: symbolic link file cannot added");
+  ip->nlink++;
+  iupdate(ip);
+  iunlockput(ip);
+  iunlockput(dp);
+  end_op();
+
+  return 0;
+bad:
+  iunlockput(ip);
+  iunlockput(dp);
+  end_op();
+  return -1;
+
+}
+
 // Is the directory dp empty except for "." and ".." ?
 static int
 isdirempty(struct inode *dp)
@@ -283,6 +335,35 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+struct inode* name2inode(char* path, int mode, int* recursecnt)
+{
+  if(*recursecnt >= 10)
+    return 0;
+
+  struct inode* ip;
+  if((ip = namei(path)) == 0)
+    return -0;
+  
+  ilock(ip);
+  // return if the file is not a symbolic link or opened with 
+  // O_NOFOLLOW
+  if(ip->type != T_SYMLINK || mode & O_NOFOLLOW){
+    iunlock(ip);
+    return ip;
+  }
+
+  // trace the symbolic, return the final non-symlink file
+  char target[MAXPATH];
+  if(readi(ip, 0, (uint64)target, 0,MAXPATH) != MAXPATH){
+    iunlockput(ip);
+    return 0;
+  }
+  iunlockput(ip);
+  (*recursecnt)++;
+  return name2inode(target, mode, recursecnt);
+}
+
+
 uint64
 sys_open(void)
 {
@@ -304,7 +385,12 @@ sys_open(void)
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
+    // if((ip = namei(path)) == 0){
+    //   end_op();
+    //   return -1;
+    // }
+    int cnt = 0;
+    if((ip = name2inode(path, omode, &cnt)) == 0){
       end_op();
       return -1;
     }
